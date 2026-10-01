@@ -6,6 +6,7 @@ package restful
 
 import (
 	"context"
+	"encoding/json"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -167,6 +168,27 @@ func TestGetResponseData_NoDataMaxBytes(t *testing.T) {
 	err := GetResponseData(resp, maxBytes, nil)
 	assert.NoError(err)
 	assert.LessOrEqual(body.read, maxBytes+1) // MaxBytesReader may read one extra byte
+}
+
+func TestSendRecv_NoContentJSONContentType(t *testing.T) {
+	assert := assert.New(t)
+
+	// Go's server deletes the body and Content-Length for 204 (RFC 9110).
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set(ContentTypeHeader, ContentTypeApplicationJSON)
+		w.WriteHeader(http.StatusNoContent)
+		_, _ = w.Write([]byte(`{"ignored":true}`))
+	}))
+	defer srv.Close()
+
+	var responseBody json.RawMessage
+	resp, err := NewClient().SendRecv(context.Background(), http.MethodPost, srv.URL, nil, nil, &responseBody)
+	assert.NoError(err)
+	if assert.NotNil(resp) {
+		assert.Equal(http.StatusNoContent, resp.StatusCode)
+		resp.Body.Close()
+	}
+	assert.Nil(responseBody)
 }
 
 func TestGetResponseData_StreamingZeroContentLengthDrainRespectsMaxBytes(t *testing.T) {
