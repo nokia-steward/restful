@@ -125,3 +125,13 @@ client := restful.NewClient().SetOauth2Conf(oauth2.Config{ClientID: "id", Client
 * `SendRecvResolveFirst2xxSequential` and `SendRecvResolveFirst2xxParallel` are similar to the previous one, but the first 2xx answer satisfies them. Returns data of the first positive response. Sequential and parallel variants send requests one-by-one or all at the same time.
 * `SendRecvListFirst2xxSequential` and `SendRecvListFirst2xxParallel` are similar to the previous one, but target URLs are defined as a list.
 * `PingList` pings a list of URLs. Expects 2xx responses for all. No request body sent or received.
+
+## Load balancing (`EnableLoadBalanceRandom`)
+
+Spreads requests across A/AAAA records of the target hostname, for example a Kubernetes headless Service.
+
+The request URL and TLS ServerName stay the original hostname. Only the TCP connection is opened to a chosen address, so certificate verification uses the hostname, not the backend IP.
+
+Each request, and each retry, picks an address independently. Load balancing is a no-op when the flag is off, the host is already an IP, DNS fails, DNS returns a single address, or the underlying transport is not `*http.Transport`.
+
+Membership follows DNS, not kube-proxy Endpoints on a ClusterIP Service. Headless Services omit not-ready pods unless `publishNotReadyAddresses` is true. A short client-side DNS cache can delay noticing membership changes. Connection failures are retried with a new address when `Retry` is configured; this feature does not eject addresses on its own.

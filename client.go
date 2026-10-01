@@ -146,6 +146,8 @@ type Client struct {
 
 	// LoadBalanceRandom is a flag that tells whether to choose random IP address from the list of IPs received in DNS response for the target URI.
 	LoadBalanceRandom bool
+
+	lbDNS lbDNSCache
 }
 
 // GetTransport returns the client's underlying transport.
@@ -160,17 +162,19 @@ func (c *Client) GetTransport() http.RoundTripper {
 //
 // Transport wrapping order (outermost → innermost):
 //
-//	otelhttp.Transport → loggingTransport → actual transport
+//	otelhttp.Transport → loggingTransport → loadBalanceTransport → actual transport
 //
 // loggingTransport sits inside the OTel wrapper so that by the time
 // RoundTrip is called the OTel client span is already active on the
 // context. This lets the logger read the real span ID without creating
 // any extra spans.
 //
+// loadBalanceTransport is a no-op unless EnableLoadBalanceRandom is on.
+//
 // It is not the same as setting client.Client.Transport directly.
 func (c *Client) SetTransport(transport http.RoundTripper) {
 	c.nonTracedTransport = transport
-	logT := &loggingTransport{wrapped: transport}
+	logT := &loggingTransport{wrapped: &loadBalanceTransport{client: c, wrapped: transport}}
 	if isTraced && tracer.GetOTel() {
 		c.Client.Transport = otelhttp.NewTransport(logT)
 	} else {
@@ -707,7 +711,8 @@ func (c *Client) Do(req *http.Request) (*http.Response, error) {
 
 func (c *Client) doWithRetry(req *http.Request, spanStr, targetForLog string) (*http.Response, error) {
 	originalHost := req.URL.Hostname()
-	targetForLog = c.setLoadBalanceTarget(req, targetForLog, originalHost)
+	baseTarget := targetForLog
+	_, req = c.applyLoadBalance(req, baseTarget, originalHost)
 
 	clonedBody := c.cloneBody(req)
 	resp, err := c.do(req)
@@ -717,7 +722,7 @@ func (c *Client) doWithRetry(req *http.Request, spanStr, targetForLog string) (*
 			_ = resp.Body.Close()
 		}
 
-		targetForLog = c.setLoadBalanceTarget(req, targetForLog, originalHost) // Set target again
+		targetForLog, req = c.applyLoadBalance(req, baseTarget, originalHost) // Re-pick on retry.
 
 		req.Body = clonedBody
 		clonedBody = c.cloneBody(req)
@@ -1116,39 +1121,31 @@ func hostPortForURL(host, port string) string {
 	return strings.TrimSuffix(net.JoinHostPort(host, port), ":")
 }
 
-func (c *Client) setLoadBalanceTarget(req *http.Request, target, originalHost string) (targetOut string) {
-	targetOut = target
-	if !c.LoadBalanceRandom {
-		return
-	}
-	if net.ParseIP(originalHost) != nil {
-		log.Debugf("Host %s is an IP address, not a hostname. Load balancing is not applied.", req.URL.Hostname())
-		return // Do not apply load balancing if Host is an IP address.
-	}
-
-	IPs, err := netLookupHost(req.Context(), originalHost)
-	if err != nil {
-		log.Debugf("Failed to resolve host %s: %v", originalHost, err)
-		return
-	}
-	if len(IPs) > 1 {
-		log.Debugf("Multiple IPs for %s: %v", originalHost, IPs)
-		if req.Host == "" { //  MonitorPre maybe already change req.URL.Host. And set req.Host to the original Host.
-			req.Host = req.URL.Host // Set Host header to original Host. This is used for TLS SNI and other purposes.
-		}
-		req.URL.Host = hostPortForURL(chooseIPFromList(IPs), req.URL.Port()) // Use the random IP address.
-		targetOut += "[" + req.URL.Hostname() + "]"                          // targetOut is only used for logging, so it is ok to modify it.
-	}
-	return
-}
-
-func chooseIPFromList(IPs []string) string {
+var chooseIPFromList = func(IPs []string) string {
 	index := rand.Intn(len(IPs)) //gosec:disable G404 -- This is a false positive
 	return IPs[index]            // Return the randomly chosen IP
 }
 
-// EnableLoadBalanceRandom enables or disables load balancing by random IP address.
-// If enabled, the client will resolve the hostname and choose a random IP address from the list
+// EnableLoadBalanceRandom spreads requests across A/AAAA records of the target
+// hostname (for example a Kubernetes headless Service).
+//
+// The request URL and TLS ServerName stay the original hostname; only the TCP
+// connection is opened to a chosen address. Certificate verification therefore
+// uses the hostname, not the backend IP. This does not set
+// TLSClientConfig.ServerName (that field is per-transport and would be wrong if
+// one Client is used for more than one host).
+//
+// Each request, and each retry, picks an address independently.
+//
+// Load balancing is a no-op when the flag is off, the host is already an IP,
+// DNS fails, DNS returns a single address, or the underlying transport is not
+// *http.Transport.
+//
+// Membership follows DNS, not kube-proxy Endpoints on a ClusterIP Service.
+// Headless Services omit not-ready pods unless publishNotReadyAddresses is
+// true. A short client-side DNS cache can delay noticing membership changes.
+// Connection failures are retried with a new address when Retry is configured;
+// this feature does not eject addresses on its own.
 func (c *Client) EnableLoadBalanceRandom(enable bool) *Client {
 	c.LoadBalanceRandom = enable
 	return c

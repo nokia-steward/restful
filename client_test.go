@@ -1198,7 +1198,7 @@ func TestSetLoadBalanceTarget_DoubleIP(t *testing.T) {
 	defer func() { netLookupHost = origLookupHost }()
 
 	out := client.setLoadBalanceTarget(req, target, req.URL.Hostname())
-	assert.Contains(t, req.URL.Host, "192.0.2.")
+	assert.Equal(t, "example-headless.com", req.URL.Host)
 	assert.Equal(t, "example-headless.com", req.Host)
 	assert.Regexp(t, `\[192\.0\.2\.\d+]`, out, "Expected output to contain one IP in the format '[IP]'")
 }
@@ -1229,8 +1229,7 @@ func TestSetLoadBalanceTarget_IPv6NoPort(t *testing.T) {
 	defer func() { netLookupHost = origLookupHost }()
 
 	out := client.setLoadBalanceTarget(req, target, req.URL.Hostname())
-	assert.Contains(t, []string{"[2001:db8::1]", "[2001:db8::2]"}, req.URL.Host)
-	assert.True(t, req.URL.Hostname() == "2001:db8::1" || req.URL.Hostname() == "2001:db8::2")
+	assert.Equal(t, "example.com", req.URL.Host)
 	assert.Equal(t, "example.com", req.Host)
 	assert.Regexp(t, `\[2001:db8::\d+]`, out)
 }
@@ -1247,7 +1246,7 @@ func TestSetLoadBalanceTarget_IPv6WithPort(t *testing.T) {
 	defer func() { netLookupHost = origLookupHost }()
 
 	out := client.setLoadBalanceTarget(req, target, req.URL.Hostname())
-	assert.Contains(t, []string{"[2001:db8::1]:8080", "[2001:db8::2]:8080"}, req.URL.Host)
+	assert.Equal(t, "example.com:8080", req.URL.Host)
 	assert.Equal(t, "8080", req.URL.Port())
 	assert.Equal(t, "example.com:8080", req.Host)
 	assert.Regexp(t, `\[2001:db8::\d+]`, out)
@@ -1265,6 +1264,6 @@ func TestSetLoadBalanceTarget_IPv4WithPort(t *testing.T) {
 	defer func() { netLookupHost = origLookupHost }()
 
 	_ = client.setLoadBalanceTarget(req, target, req.URL.Hostname())
-	assert.Contains(t, []string{"192.0.2.1:8080", "192.0.2.2:8080"}, req.URL.Host)
+	assert.Equal(t, "example.com:8080", req.URL.Host)
 	assert.Equal(t, "8080", req.URL.Port())
 }
