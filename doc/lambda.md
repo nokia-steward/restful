@@ -6,10 +6,9 @@ Lambda lets you focus on business logic.
 HTTP + JSON are technical details, just like socket handling and forking on accepting a request.
 These details are not in your way.
 Lambda creates a new abstraction, making a server a collection of functions.
-The concept is nothing new. It is somewhat similar to Python's FastAPI with Pydantic.
 
 In programming, "lambda" means an anonymous function.
-Restful's Lambda Server may have named handler functions, but those are mapped to standard http handlers by an anonymous wrapper.
+Restful's Lambda Server may have named handler functions, but in the background standard http handlers are created by an anonymous wrapper.
 That mechanism ensures compatibility and intermixability with `http.HandlerFunc`. See Q&A.
 
 In a PaaS context, "lambda" may refer to serverless handlers.
@@ -226,14 +225,16 @@ The following rules are applied in this order:
 
 ## Q&A
 
+> Disclaimer: 3rd party projects are referred here. No guaratees if those are safe or secure to be used.
+
 **Q: Where are the out-of-the-box middlewares like authorization, serving static files, etc?**
 
 A: You are visiting the wrong project, maybe.
    This project is about being able to build cloud-native RESTful services.
    Leaving many things to other services, such as authenticating consumers and authorizing requests to API gateways.
-   If you need those in Go code, you may want to check out [Fiber](https://github.com/gofiber/fiber).
+   If you need those in Go code, you may want to check out [Fiber](https://github.com/gofiber/fiber) or [Kasper](https://github.com/vitalvas/kasper).
 
-**Q: Why is this library based on Gorilla/Mux, when there are other high-performance alternatives, such as [Gin](https://github.com/gin-gonic/gin) or [Bunrouter](https://bunrouter.uptrace.dev/)?**
+**Q: Why is this library based on Gorilla/Mux, when there are other high-performance alternatives, such as [Gin](https://github.com/gin-gonic/gin) or [Bunrouter](https://github.com/uptrace/bunrouter)?**
 
 A: We are fortunate to have so many great routers.
    Our aim is to have a simple syntax similar to standard http package.
@@ -251,8 +252,12 @@ A: Not supported. But you can freely mix lambdas and http handler functions.
 
 **Q: Can one stream responses? E.g. if response for request is to contain millions of database entries?**
 
-A: Not supported. But you can freely mix lambdas and http handler functions. Base http package can do streaming wonderfully.
+A: Not supported. But you can freely mix lambdas and http handler functions. Go's http package can do streaming wonderfully.
 
 **Q: How to respond with binary content, such as downloading favicon or an image?**
 
-A: Lambda serves primarily the purpose of JSON content. But you can freely mix lambdas and http handler functions. Base http package can send binary payload fine.
+A: Lambda serves primarily the purpose of JSON content. But you can freely mix lambdas and http handler functions. Go's http package can send binary payload fine.
+
+**Q: Can it generate OpenAPI Specifications?**
+
+A: No. Maybe it is a better approach to have a OpenAPI Specification (OAS) first and generate Go structures from that. Python's FastAPI is an amazing tool we all love, but this project is not like that.
