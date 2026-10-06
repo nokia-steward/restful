@@ -126,6 +126,17 @@ func bodyAllowedForStatus(status int) bool {
 	return true
 }
 
+// getData reads and parses JSON data from the provided source, enforcing content type and size limits.
+// It returns an error if the content type is not JSON, if the body exceeds maxBytes, or if the JSON is invalid.
+//
+// Parameters:
+//   - ctx: the context for the request
+//   - w: the http.ResponseWriter to write responses to; can be nil in case of reading a response
+//   - headers: the HTTP headers received
+//   - ioBody: the body to be read and parsed as JSON
+//   - maxBytes: the maximum number of bytes to read from the body; zero or negative means no limit
+//   - data: the destination for the parsed JSON data
+//   - statusCode: the HTTP status code of the response; zero or negative for requests
 func getData(ctx context.Context, w http.ResponseWriter, headers http.Header, ioBody io.ReadCloser, maxBytes int, data any, statusCode int) error {
 	// net/http deletes Content-Length for no-body statuses, so that header check never fires for 204.
 	if data == nil || headers.Get("Content-Length") == "0" || !bodyAllowedForStatus(statusCode) {
@@ -139,26 +150,26 @@ func getData(ctx context.Context, w http.ResponseWriter, headers http.Header, io
 		return nil
 	}
 
-	return getDataJSON(ctx, w, headers, ioBody, maxBytes, data, statusCode, GetBaseContentType(headers))
+	return getDataJSON(ctx, w, headers, ioBody, maxBytes, data, statusCode)
 }
 
-func getDataJSON(ctx context.Context, w http.ResponseWriter, headers http.Header, ioBody io.ReadCloser, maxBytes int, data any, statusCode int, recvdContentType string) error {
+func getDataJSON(ctx context.Context, w http.ResponseWriter, headers http.Header, ioBody io.ReadCloser, maxBytes int, data any, statusCode int) error {
 	defer ioBody.Close()
 
 	// Apply the byte limit, so that not to parse huge JSON data.
 	limitedBody, err := createLimitedReader(w, headers, ioBody, maxBytes)
 	if err != nil {
-		if statusCode == 0 {
+		if statusCode <= 0 {
 			return NewError(err, http.StatusInternalServerError, "Failed to read request")
 		}
 		return err
 	}
 
-	if !isJSONContentType(recvdContentType) {
+	if !isJSONContentType(GetBaseContentType(headers)) {
 		dropBody(limitedBody)
-		err := fmt.Errorf("unexpected Content-Type: '%s'; not JSON", recvdContentType)
-		if statusCode == 0 {
-			return NewError(err, http.StatusBadRequest)
+		err := fmt.Errorf("unexpected Content-Type: '%s'; not JSON", headers.Get("Content-Type"))
+		if statusCode <= 0 {
+			return NewError(err, http.StatusUnsupportedMediaType)
 		}
 		return err
 	}
@@ -173,12 +184,12 @@ func getDataJSON(ctx context.Context, w http.ResponseWriter, headers http.Header
 		if maxBytes > 0 && strings.Contains(err.Error(), "request body too large") {
 			dropBody(limitedBody)
 			readErr := fmt.Errorf("too long content: > %d", maxBytes)
-			if statusCode == 0 {
+			if statusCode <= 0 {
 				return NewError(readErr, http.StatusInternalServerError, "Failed to read request")
 			}
 			return readErr
 		}
-		if statusCode == 0 {
+		if statusCode <= 0 {
 			return NewError(err, http.StatusBadRequest, "Invalid JSON content")
 		}
 	}

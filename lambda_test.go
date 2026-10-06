@@ -370,7 +370,7 @@ func TestBadCT(t *testing.T) {
 	rr := httptest.NewRecorder()
 	r.ServeHTTP(rr, req)
 	respBody := rr.Body.String()
-	assert.Equal(400, rr.Code)
+	assert.Equal(415, rr.Code)
 	assert.NotEmpty(rr.Header().Get("Content-type"))
 	assert.Contains(respBody, `"unexpected`)
 }

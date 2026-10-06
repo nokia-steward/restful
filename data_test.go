@@ -263,7 +263,7 @@ func TestCreateLimitedReader_TooBigContentLengthRespectsMaxBytes(t *testing.T) {
 	assert.LessOrEqual(body.read, maxBytes+1) // MaxBytesReader may read one extra byte
 }
 
-func TestGetRequestData_NonJSONBodyRespectsMaxBytes(t *testing.T) {
+func TestGetRequestData_NonJSONBodyLimitedReader(t *testing.T) {
 	assert := assert.New(t)
 	const maxBytes = 64
 	body := &countingReadCloser{remain: 1_000_000}
@@ -272,7 +272,7 @@ func TestGetRequestData_NonJSONBodyRespectsMaxBytes(t *testing.T) {
 	var data struct{}
 	err := GetRequestData(req, maxBytes, &data)
 	assert.Error(err)
-	assert.Equal(http.StatusBadRequest, GetErrStatusCode(err))
+	assert.Equal(http.StatusUnsupportedMediaType, GetErrStatusCode(err))
 	assert.Contains(err.Error(), "not JSON")
 	assert.LessOrEqual(body.read, maxBytes+1)
 }
@@ -284,7 +284,7 @@ func TestGetRequestData_NonJSONBodySmall(t *testing.T) {
 	var data struct{}
 	err := GetRequestData(req, 64, &data)
 	assert.Error(err)
-	assert.Equal(http.StatusBadRequest, GetErrStatusCode(err))
+	assert.Equal(http.StatusUnsupportedMediaType, GetErrStatusCode(err))
 	assert.Contains(err.Error(), "not JSON")
 }
 
