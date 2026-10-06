@@ -5,9 +5,11 @@
 package restful
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"io"
+	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -102,6 +104,47 @@ func TestDataPostForm(t *testing.T) {
 		_, err = NewClient().Do(req)
 		assert.Nil(err)
 	}
+}
+
+func TestGetRequestData_URLEncodedFormRespectsMaxBytes(t *testing.T) {
+	const maxBytes = 64
+	body := &countingReadCloser{remain: 1_000_000}
+	req := httptest.NewRequest(http.MethodPost, "/", body)
+	req.Header.Set(ContentTypeHeader, ContentTypeForm)
+	var data abcType
+	err := GetRequestData(req, maxBytes, &data)
+	assert.Error(t, err)
+	assert.Equal(t, http.StatusNotAcceptable, GetErrStatusCode(err))
+	assert.LessOrEqual(t, body.read, maxBytes+1)
+}
+
+func TestGetRequestData_EmptyFormWithNilBody(t *testing.T) {
+	req := httptest.NewRequest(http.MethodPost, "/", nil)
+	req.Body = nil
+	req.Header.Set(ContentTypeHeader, ContentTypeForm)
+	var data abcType
+	err := GetRequestData(req, 64, &data)
+	assert.ErrorContains(t, err, "missing form body")
+}
+
+func TestGetRequestData_MultipartFormRespectsMaxBytes(t *testing.T) {
+	const maxBytes = 64
+	var payload bytes.Buffer
+	writer := multipart.NewWriter(&payload)
+	part, err := writer.CreateFormFile("upload", "large.bin")
+	assert.NoError(t, err)
+	_, err = io.Copy(part, bytes.NewReader(bytes.Repeat([]byte("x"), 4096)))
+	assert.NoError(t, err)
+	assert.NoError(t, writer.Close())
+
+	body := &readCounter{Reader: bytes.NewReader(payload.Bytes())}
+	req := httptest.NewRequest(http.MethodPost, "/", body)
+	req.Header.Set(ContentTypeHeader, writer.FormDataContentType())
+	var data abcType
+	err = GetRequestData(req, maxBytes, &data)
+	assert.Error(t, err)
+	assert.Equal(t, http.StatusNotAcceptable, GetErrStatusCode(err))
+	assert.LessOrEqual(t, body.read, maxBytes+1)
 }
 
 // countingReadCloser reports how many bytes were pulled from an oversized body.
