@@ -240,11 +240,17 @@ func getRequestData(w http.ResponseWriter, req *http.Request, maxBytes int, data
 		}
 		return nil
 	case ContentTypeForm:
+		if maxBytes > 0 && req.Body != nil {
+			req.Body = http.MaxBytesReader(w, req.Body, int64(maxBytes))
+		}
 		if err := req.ParseForm(); err != nil {
 			return NewError(err, http.StatusNotAcceptable, "Bad form")
 		}
 		return formDecoder.Decode(data, req.PostForm)
 	case ContentTypeMultipartForm:
+		if maxBytes > 0 && req.Body != nil { // Limit the length of the request body, while ParseMultipartForm(maxMemory) limits the memory used for file parts only.
+			req.Body = http.MaxBytesReader(w, req.Body, int64(maxBytes))
+		}
 		if err := req.ParseMultipartForm(int64(maxBytes)); err != nil { // #nosec G120: use maxBytes parameter
 			return NewError(err, http.StatusNotAcceptable, "Bad form")
 		}
