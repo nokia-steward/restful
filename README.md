@@ -55,9 +55,10 @@ location, err := restful.Post(ctx, "https://example.com", &reqData, &respData)
   Pre and post hooks can be used for whatever you want, such as adding Prometheus counters on the router level, without littering your business logic.
 * [Error](doc/error.md) is a Go error object containing an HTTP status code besides the traditional error.
 
-Trace context and error are used both at Lambda Server and Client.
-These use similar middleware solution called Monitor.
-That is why, unlike many other Go HTTP router packages, they form a module together.
+You may ask why these are packed together instead of being completely independent packages.
+A consistent server and client package have the advatage of using the same error package, e.g. a client error can be returned by the server without any mapping.
+
+This package (both client and server part) logs requests and responses separately. That is great as you see when a request arrived/sent with the right timestamp, but you can't see at the status code right away the related request. You can correlate the logs using the tracing IDs printed.
 
 ## Principles
 
